@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>单摆简谐振动模拟器</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a24;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    color: #c0c0d0;
+    overflow: hidden;
+  }
+  h1 {
+    font-size: 1.4rem;
+    letter-spacing: 4px;
+    color: #8888cc;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+  canvas {
+    border-radius: 12px;
+    box-shadow: 0 0 40px rgba(100, 100, 200, 0.08);
+  }
+  .panel {
+    display: flex;
+    gap: 24px;
+    margin-top: 16px;
+    font-size: 0.85rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .panel span { color: #6666aa; }
+  .panel strong { color: #aaaadd; font-weight: 600; }
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .controls label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    color: #6666aa;
+  }
+  .controls input[type="range"] {
+    width: 120px;
+    accent-color: #6666cc;
+  }
+  .controls .val {
+    font-size: 0.8rem;
+    color: #aaaadd;
+    min-width: 48px;
+    text-align: center;
+  }
+  button {
+    background: #2a2a40;
+    color: #aaaadd;
+    border: 1px solid #444466;
+    padding: 6px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+  }
+  button:hover { background: #3a3a55; }
+</style>
+</head>
+<body>
+
+<h1>单摆简谐振动模拟器</h1>
+<canvas id="canvas"></canvas>
+
+<div class="panel">
+  <div><span>摆角 θ：</span><strong id="dispAngle">45.0°</strong></div>
+  <div><span>角速度 ω：</span><strong id="dispOmega">0.00 rad/s</strong></div>
+  <div><span>周期 T：</span><strong id="dispPeriod">—</strong></div>
+  <div><span>时间 t：</span><strong id="dispTime">0.00 s</strong></div>
+</div>
+
+<div class="controls">
+  <label>
+    摆长 L
+    <input type="range" id="sliderL" min="80" max="350" value="200">
+    <div class="val" id="valL">200 px</div>
+  </label>
+  <label>
+    重力 g
+    <input type="range" id="sliderG" min="1" max="30" step="0.1" value="9.8">
+    <div class="val" id="valG">9.8 m/s²</div>
+  </label>
+  <label>
+    初始角度
+    <input type="range" id="sliderA" min="5" max="85" value="45">
+    <div class="val" id="valA">45°</div>
+  </label>
+  <label>
+    阻尼
+    <input type="range" id="sliderD" min="0" max="0.5" step="0.01" value="0">
+    <div class="val" id="valD">0.00</div>
+  </label>
+  <label style="justify-content:flex-end">
+    <button id="btnReset">重置</button>
+  </label>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const W = 700, H = 520;
+canvas.width = W;
+canvas.height = H;
+
+// Physics parameters
+let L = 200;          // pendulum length (px, also used as visual length)
+let g = 9.8;          // gravity (m/s²)
+let theta0 = 45;      // initial angle (degrees)
+let damping = 0;      // damping coefficient
+
+// Simulation state
+let theta, omega, time;
+let trail = [];
+const MAX_TRAIL = 200;
+let lastTimestamp = null;
+let animId = null;
+
+// Pivot position
+const pivotX = W / 2;
+const pivotY = 60;
+
+// Scale: 1 meter ≈ 100 px for physics
+const PX_PER_M = 100;
+
+function init() {
+  theta = theta0 * Math.PI / 180;
+  omega = 0;
+  time = 0;
+  trail = [];
+  lastTimestamp = null;
+}
+
+function reset() {
+  if (animId) cancelAnimationFrame(animId);
+  init();
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+// Semi-implicit Euler integration
+function stepPhysics(dt) {
+  // Sub-step for stability
+  const subSteps = 8;
+  const h = dt / subSteps;
+  for (let i = 0; i < subSteps; i++) {
+    const alpha = -(g / (L / PX_PER_M)) * Math.sin(theta) - damping * omega;
+    omega += alpha * h;
+    theta += omega * h;
+  }
+  time += dt;
+}
+
+function getBobPos() {
+  return {
+    x: pivotX + L * Math.sin(theta),
+    y: pivotY + L * Math.cos(theta)
+  };
+}
+
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(60, 60, 100, 0.15)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+}
+
+function drawArc() {
+  // Draw the swing arc (faint)
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, L, Math.PI / 2 - 1.2, Math.PI / 2 + 1.2);
+  ctx.strokeStyle = 'rgba(100, 100, 180, 0.08)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawTrail() {
+  if (trail.length < 2) return;
+  for (let i = 1; i < trail.length; i++) {
+    const alpha = (i / trail.length) * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+    ctx.lineTo(trail[i].x, trail[i].y);
+    ctx.strokeStyle = `rgba(120, 140, 255, ${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function drawPendulum(bob) {
+  // Rod
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(bob.x, bob.y);
+  ctx.strokeStyle = '#6666aa';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Pivot
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#8888bb';
+  ctx.fill();
+
+  // Glow layers
+  const glowColors = [
+    { r: 100, g: 120, b: 255, radius: 30, alpha: 0.06 },
+    { r: 100, g: 120, b: 255, radius: 20, alpha: 0.12 },
+    { r: 130, g: 150, b: 255, radius: 14, alpha: 0.25 },
+  ];
+  for (const g of glowColors) {
+    const grad = ctx.createRadialGradient(bob.x, bob.y, 0, bob.x, bob.y, g.radius);
+    grad.addColorStop(0, `rgba(${g.r},${g.g},${g.b},${g.alpha})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    ctx.arc(bob.x, bob.y, g.radius, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  // Bob
+  const bobGrad = ctx.createRadialGradient(bob.x - 4, bob.y - 4, 2, bob.x, bob.y, 14);
+  bobGrad.addColorStop(0, '#dde0ff');
+  bobGrad.addColorStop(0.5, '#7788dd');
+  bobGrad.addColorStop(1, '#4455aa');
+  ctx.beginPath();
+  ctx.arc(bob.x, bob.y, 14, 0, Math.PI * 2);
+  ctx.fillStyle = bobGrad;
+  ctx.fill();
+
+  // Bob highlight
+  ctx.beginPath();
+  ctx.arc(bob.x - 4, bob.y - 4, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fill();
+}
+
+function drawAngleIndicator() {
+  const arcR = 40;
+  ctx.beginPath();
+  const startAngle = Math.PI / 2;
+  const endAngle = Math.PI / 2 - theta;
+  ctx.arc(pivotX, pivotY, arcR, Math.min(startAngle, endAngle), Math.max(startAngle, endAngle));
+  ctx.strokeStyle = 'rgba(150, 150, 220, 0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Angle text
+  const midAngle = (startAngle + endAngle) / 2;
+  const labelR = arcR + 16;
+  ctx.fillStyle = '#8888bb';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    (theta * 180 / Math.PI).toFixed(1) + '°',
+    pivotX + labelR * Math.cos(midAngle),
+    pivotY + labelR * Math.sin(midAngle)
+  );
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#1a1a24';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGrid();
+  drawArc();
+  drawTrail();
+  drawAngleIndicator();
+
+  const bob = getBobPos();
+  drawPendulum(bob);
+
+  // Update display
+  document.getElementById('dispAngle').textContent = (theta * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('dispOmega').textContent = omega.toFixed(2) + ' rad/s';
+  document.getElementById('dispTime').textContent = time.toFixed(2) + ' s';
+
+  // Approximate period (small-angle formula for display)
+  const T = 2 * Math.PI * Math.sqrt((L / PX_PER_M) / g);
+  document.getElementById('dispPeriod').textContent = T.toFixed(2) + ' s';
+}
+
+function loop(timestamp) {
+  if (lastTimestamp === null) {
+    lastTimestamp = timestamp;
+  }
+  let dt = (timestamp - lastTimestamp) / 1000;
+  lastTimestamp = timestamp;
+
+  // Clamp dt to avoid huge jumps when tab is inactive
+  if (dt > 0.05) dt = 0.016;
+
+  stepPhysics(dt);
+
+  // Record trail
+  const bob = getBobPos();
+  trail.push({ x: bob.x, y: bob.y });
+  if (trail.length > MAX_TRAIL) trail.shift();
+
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+// Controls
+document.getElementById('sliderL').addEventListener('input', function() {
+  L = parseInt(this.value);
+  document.getElementById('valL').textContent = L + ' px';
+  trail = [];
+});
+
+document.getElementById('sliderG').addEventListener('input', function() {
+  g = parseFloat(this.value);
+  document.getElementById('valG').textContent = g.toFixed(1) + ' m/s²';
+});
+
+document.getElementById('sliderA').addEventListener('input', function() {
+  theta0 = parseInt(this.value);
+  document.getElementById('valA').textContent = theta0 + '°';
+});
+
+document.getElementById('sliderD').addEventListener('input', function() {
+  damping = parseFloat(this.value);
+  document.getElementById('valD').textContent = damping.toFixed(2);
+});
+
+document.getElementById('btnReset').addEventListener('click', reset);
+
+// Start
+init();
+animId = requestAnimationFrame(loop);
+</script>
+</body>
+</html>
