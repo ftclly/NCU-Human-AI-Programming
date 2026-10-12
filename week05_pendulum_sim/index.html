@@ -91,26 +91,21 @@
 <div class="controls">
   <label>
     摆长 L
-    <input type="range" id="sliderL" min="80" max="350" value="200">
+    <input type="range" id="sliderL" min="100" max="350" value="200">
     <div class="val" id="valL">200 px</div>
   </label>
   <label>
     重力 g
-    <input type="range" id="sliderG" min="1" max="30" step="0.1" value="9.8">
+    <input type="range" id="sliderG" min="1" max="25" step="0.1" value="9.8">
     <div class="val" id="valG">9.8 m/s²</div>
   </label>
   <label>
-    初始角度
-    <input type="range" id="sliderA" min="5" max="85" value="45">
-    <div class="val" id="valA">45°</div>
-  </label>
-  <label>
     阻尼
-    <input type="range" id="sliderD" min="0" max="0.5" step="0.01" value="0">
-    <div class="val" id="valD">0.00</div>
+    <input type="range" id="sliderD" min="0" max="0.01" step="0.001" value="0">
+    <div class="val" id="valD">0.000</div>
   </label>
   <label style="justify-content:flex-end">
-    <button id="btnReset">重置</button>
+    <button id="btnReset">重置摆动</button>
   </label>
 </div>
 
@@ -345,14 +340,9 @@ document.getElementById('sliderG').addEventListener('input', function() {
   document.getElementById('valG').textContent = g.toFixed(1) + ' m/s²';
 });
 
-document.getElementById('sliderA').addEventListener('input', function() {
-  theta0 = parseInt(this.value);
-  document.getElementById('valA').textContent = theta0 + '°';
-});
-
 document.getElementById('sliderD').addEventListener('input', function() {
   damping = parseFloat(this.value);
-  document.getElementById('valD').textContent = damping.toFixed(2);
+  document.getElementById('valD').textContent = damping.toFixed(3);
 });
 
 document.getElementById('btnReset').addEventListener('click', reset);
